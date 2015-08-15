@@ -20,12 +20,13 @@
 
 #ifdef _WIN32
     // Alignment
+    #define FORCE_INLINE __forceinline
     #define MEMORY_ALIGNED16(x) __declspec(align(16)) x
     #define MEMORY_ALIGNED32(x) __declspec(align(32)) x
     #define MEMORY_ALIGNED64(x) __declspec(align(64)) x
     #define MEMORY_ALIGNED128(x) __declspec(align(128)) x
 #else
-    #define __forceinline inline __attribute__((always_inline))
+    #define FORCE_INLINE inline __attribute__((always_inline))
     #define MEMORY_ALIGNED16(x) __attribute__((aligned(16))) x
     #define MEMORY_ALIGNED32(x) __attribute__((aligned(32))) x
     #define MEMORY_ALIGNED64(x) __attribute__((aligned(64))) x
@@ -34,7 +35,7 @@
 
 #ifndef _MSC_VER
 
-#if defined(__x86_64__) || defined(_M_X64)
+#ifdef ARCHITECTURE_x86_64
 #define Crash() __asm__ __volatile__("int $3")
 #elif defined(_M_ARM)
 #define Crash() __asm__ __volatile__("trap")

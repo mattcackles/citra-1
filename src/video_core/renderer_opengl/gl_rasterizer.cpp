@@ -7,6 +7,7 @@
 
 #include "common/color.h"
 #include "common/math_util.h"
+#include "common/profiler.h"
 
 #include "core/hw/gpu.h"
 #include "core/memory.h"
@@ -98,7 +99,6 @@ void RasterizerOpenGL::InitObjects() {
     fb_color_texture.texture.Create();
     ReconfigureColorTexture(fb_color_texture, Pica::Regs::ColorFormat::RGBA8, 1, 1);
 
-    state.texture_units[0].enabled_2d = true;
     state.texture_units[0].texture_2d = fb_color_texture.texture.handle;
     state.Apply();
 
@@ -114,7 +114,6 @@ void RasterizerOpenGL::InitObjects() {
     fb_depth_texture.texture.Create();
     ReconfigureDepthTexture(fb_depth_texture, Pica::Regs::DepthFormat::D16, 1, 1);
 
-    state.texture_units[0].enabled_2d = true;
     state.texture_units[0].texture_2d = fb_depth_texture.texture.handle;
     state.Apply();
 
@@ -203,9 +202,9 @@ void RasterizerOpenGL::Reset() {
     res_cache.FullFlush();
 }
 
-void RasterizerOpenGL::AddTriangle(const Pica::VertexShader::OutputVertex& v0,
-                                   const Pica::VertexShader::OutputVertex& v1,
-                                   const Pica::VertexShader::OutputVertex& v2) {
+void RasterizerOpenGL::AddTriangle(const Pica::Shader::OutputVertex& v0,
+                                   const Pica::Shader::OutputVertex& v1,
+                                   const Pica::Shader::OutputVertex& v2) {
     vertex_batch.push_back(HardwareVertex(v0));
     vertex_batch.push_back(HardwareVertex(v1));
     vertex_batch.push_back(HardwareVertex(v2));
@@ -492,7 +491,6 @@ void RasterizerOpenGL::ReconfigureColorTexture(TextureInfo& texture, Pica::Regs:
         break;
     }
 
-    state.texture_units[0].enabled_2d = true;
     state.texture_units[0].texture_2d = texture.texture.handle;
     state.Apply();
 
@@ -536,7 +534,6 @@ void RasterizerOpenGL::ReconfigureDepthTexture(DepthTextureInfo& texture, Pica::
         break;
     }
 
-    state.texture_units[0].enabled_2d = true;
     state.texture_units[0].texture_2d = texture.texture.handle;
     state.Apply();
 
@@ -765,10 +762,9 @@ void RasterizerOpenGL::SyncDrawState() {
         const auto& texture = pica_textures[texture_index];
 
         if (texture.enabled) {
-            state.texture_units[texture_index].enabled_2d = true;
             res_cache.LoadAndBindTexture(state, texture_index, texture);
         } else {
-            state.texture_units[texture_index].enabled_2d = false;
+            state.texture_units[texture_index].texture_2d = 0;
         }
     }
 
@@ -803,7 +799,6 @@ void RasterizerOpenGL::ReloadColorBuffer() {
         }
     }
 
-    state.texture_units[0].enabled_2d = true;
     state.texture_units[0].texture_2d = fb_color_texture.texture.handle;
     state.Apply();
 
@@ -861,7 +856,6 @@ void RasterizerOpenGL::ReloadDepthBuffer() {
         }
     }
 
-    state.texture_units[0].enabled_2d = true;
     state.texture_units[0].texture_2d = fb_depth_texture.texture.handle;
     state.Apply();
 
@@ -873,16 +867,19 @@ void RasterizerOpenGL::ReloadDepthBuffer() {
     state.Apply();
 }
 
+Common::Profiling::TimingCategory buffer_commit_category("Framebuffer Commit");
+
 void RasterizerOpenGL::CommitColorBuffer() {
     if (last_fb_color_addr != 0) {
         u8* color_buffer = Memory::GetPhysicalPointer(last_fb_color_addr);
 
         if (color_buffer != nullptr) {
+            Common::Profiling::ScopeTimer timer(buffer_commit_category);
+
             u32 bytes_per_pixel = Pica::Regs::BytesPerColorPixel(fb_color_texture.format);
 
             std::unique_ptr<u8[]> temp_gl_color_buffer(new u8[fb_color_texture.width * fb_color_texture.height * bytes_per_pixel]);
 
-            state.texture_units[0].enabled_2d = true;
             state.texture_units[0].texture_2d = fb_color_texture.texture.handle;
             state.Apply();
 
@@ -913,6 +910,8 @@ void RasterizerOpenGL::CommitDepthBuffer() {
         u8* depth_buffer = Memory::GetPhysicalPointer(last_fb_depth_addr);
 
         if (depth_buffer != nullptr) {
+            Common::Profiling::ScopeTimer timer(buffer_commit_category);
+
             u32 bytes_per_pixel = Pica::Regs::BytesPerDepthPixel(fb_depth_texture.format);
 
             // OpenGL needs 4 bpp alignment for D24
@@ -920,7 +919,6 @@ void RasterizerOpenGL::CommitDepthBuffer() {
 
             std::unique_ptr<u8[]> temp_gl_depth_buffer(new u8[fb_depth_texture.width * fb_depth_texture.height * gl_bpp]);
 
-            state.texture_units[0].enabled_2d = true;
             state.texture_units[0].texture_2d = fb_depth_texture.texture.handle;
             state.Apply();
 
